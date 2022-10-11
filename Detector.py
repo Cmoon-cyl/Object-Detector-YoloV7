@@ -16,7 +16,7 @@ from utils.general import check_img_size, non_max_suppression, scale_coords, xyx
 from utils.plots import plot_one_box
 from utils.torch_utils import select_device, time_synchronized, TracedModel
 
-# import pykinect_azure as pykinect
+import pykinect_azure as pykinect
 
 cv2_image = TypeVar("image opened by cv2")
 
@@ -69,7 +69,7 @@ class Detector:
         self.stride = None
         self.names = None
         self.colors = None
-        print(f"weights:{self.weights}\nTraining with device:{self.device}")
+        print(f"weights:{self.weights}\nUsing device:{self.device}")
 
     def load_model(self) -> torch.nn.Module:
         """加载模型"""
@@ -190,9 +190,9 @@ class Detector:
         height = resolution[1]
         cv2.resizeWindow('yolo', width, height)
         cv2.line(img, (int(width * 0.5 * (1 - range)), 0), (int(width * 0.5 * (1 - range)), height),
-                 (0, 255, 0), 1, 4)
+                 (0, 255, 0), 2, 4)
         cv2.line(img, (int(width * 0.5 * (1 + range)), 0), (int(width * 0.5 * (1 + range)), height),
-                 (0, 255, 0), 1, 4)
+                 (0, 255, 0), 2, 4)
         for item in results:
             cv2.circle(img, (int(item.x), int(item.y)), 1, (0, 0, 255), 8)
         cv2.imshow("yolo", img)
@@ -252,6 +252,39 @@ class Detector:
         results = []
         if device == "k4a":
             print("using k4a")
+            pykinect.initialize_libraries()
+
+            # Modify camera configuration
+            device_config = pykinect.default_configuration
+            device_config.color_resolution = pykinect.K4A_COLOR_RESOLUTION_720P
+            # print(device_config)
+            device = pykinect.start_device(config=device_config)
+
+            while True:
+
+                # Get capture
+                capture = device.update()
+
+                # Get the color image from the capture
+                ret, img0 = capture.get_color_image()
+
+                if not ret:
+                    continue
+
+                #  resolution = [img0.shape[1], img0.shape[0]]
+                resolution = [1280, 720]
+                results = self.pred(model, img0)
+                for item in results:
+                    print(item)
+                print("----------------------------------------------------")
+                self.show(img0, results, resolution, range)
+                if self.judge(mode, results, resolution[0], range, find=find):
+                    if not nosave:
+                        cv2.imwrite(str(Path(self.save_dir, "result.jpg")), img0)
+                    break
+            cv2.destroyAllWindows()
+            device.stop_cameras()
+            device.close()
 
         else:
             cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
@@ -269,6 +302,7 @@ class Detector:
                     if not nosave:
                         cv2.imwrite(str(Path(self.save_dir, "result.jpg")), img0)
                     break
+            cv2.destroyAllWindows()
             cap.release()
         return results
 
